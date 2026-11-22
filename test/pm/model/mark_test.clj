@@ -53,6 +53,9 @@
     ce [r1 cs] [r1 cs]
     cs [r1 ce] [r1 cs]))
 
+(deftest json-roundtrip
+  (is (m/eq (link "foo") (m/from-json b/schema (m/to-json (link "foo"))))))
+
 (deftest remove-from-set
   (are [mark marks expected] (m/same-set expected (m/remove-from-set mark marks))
     em [] []
