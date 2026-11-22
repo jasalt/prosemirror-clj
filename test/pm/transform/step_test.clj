@@ -105,11 +105,16 @@
     (is (n/eq (doc (p "a" (em (img)) "b")) added))
     (is (n/eq d (apply-doc (t/invert-step (t/add-node-mark-step 2 em*) d) added)))
     (is (n/eq d (apply-doc (t/remove-node-mark-step 2 em*) added)))
-    (is (= "No node at mark step's position" (:failed (t/apply-step (t/add-node-mark-step 99 em*) d)))))
+    ;; Position 5 is the end of the doc content: in range, but no node there (soft failure).
+    (is (= "No node at mark step's position" (:failed (t/apply-step (t/add-node-mark-step 5 em*) d))))
+    ;; Out of range throws, exactly like upstream's findIndex RangeError.
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"outside of fragment"
+                          (t/apply-step (t/add-node-mark-step 99 em*) d))))
   (let [d (doc (h1 "a")) step (t/attr-step 0 "level" 2) out (apply-doc step d)]
     (is (= 2 (get-in out [:content 0 :attrs :level])))
     (is (n/eq d (apply-doc (t/invert-step step d) out)))
-    (is (= "No node at attribute step's position" (:failed (t/apply-step (t/attr-step 50 "level" 2) d)))))
+    (is (= "No node at attribute step's position" (:failed (t/apply-step (t/attr-step 3 "level" 2) d))))
+    (is (thrown? clojure.lang.ExceptionInfo (t/apply-step (t/attr-step 50 "level" 2) d))))
   (let [sch (s/schema {:nodes [["doc" {:content "text*" :attrs {:meta {:default nil}}}] ["text" {}]]})
         d (s/create (get-in sch [:nodes "doc"]) nil [])
         step (t/doc-attr-step "meta" "hello") out (apply-doc step d)]
@@ -134,8 +139,12 @@
 
 (deftest json-key-shapes
   (is (= {:stepType "replace" :from 1 :to 2} (t/step-to-json (t/replace-step 1 2 r/empty-slice))))
-  (is (= {:stepType "replace" :from 1 :to 2 :slice {:content [{:type "paragraph"}] :openStart 1 :openEnd 1} :structure true}
-         (t/step-to-json (t/replace-step 1 2 (r/make-slice [(p)] 1 1) true)))))
+  ;; Upstream omits :slice when its size is 0 (an empty open paragraph has size 0).
+  (is (= {:stepType "replace" :from 1 :to 2 :structure true}
+         (t/step-to-json (t/replace-step 1 2 (r/make-slice [(p)] 1 1) true))))
+  (is (= {:stepType "replace" :from 1 :to 2
+          :slice {:content [{:type "paragraph" :content [{:type "text" :text "x"}]}] :openStart 1 :openEnd 1}}
+         (t/step-to-json (t/replace-step 1 2 (r/make-slice [(p "x")] 1 1))))))
 
 (deftest malformed-step-json
   (are [json pattern] (thrown-with-msg? clojure.lang.ExceptionInfo pattern (t/step-from-json schema json))
@@ -160,11 +169,17 @@
     (is (re-find #"Invalid content for node doc"
                  (:failed (t/apply-step (t/replace-step 0 3 (r/make-slice [(s/text schema "x")] 0 0)) d))))))
 
+(deftest inconsistent-depths-are-soft-failures
+  (let [res (t/apply-step (t/replace-step 0 3 (r/make-slice [(s/text schema "x")] 0 0)) (doc (p "ab")))]
+    (is (nil? (:doc res)))
+    (is (= "Inconsistent open depths" (:failed res)))))
+
 (deftest apply-steps-sequence
   ;; apply-steps is the server-side batch primitive: all-or-nothing, with the failing index.
   (let [d (doc (p "ab"))
         ok (t/replace-step 1 1 (r/make-slice [(s/text schema "X")] 0 0))
-        bad (t/replace-step 0 3 (r/make-slice [(s/text schema "y")] 0 0))]
+        ;; Runs against p("Xab") (size 5): a depth-consistent range, but bare text is not valid doc content.
+        bad (t/replace-step 0 5 (r/make-slice [(s/text schema "y")] 0 0))]
     (is (n/eq (doc (p "Xab")) (:doc (t/apply-steps [ok] d))))
     (let [res (t/apply-steps [ok bad] d)]
       (is (nil? (:doc res)))

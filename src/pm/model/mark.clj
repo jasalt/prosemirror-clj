@@ -8,6 +8,8 @@
     (seq (:attrs mark)) (assoc :attrs (:attrs mark))))
 (defn from-json [schema json]
   (when-not (map? json) (throw (ex-info "Invalid input for Mark.fromJSON" {})))
+  (when-not (get-in schema [:marks (:type json)])
+    (throw (ex-info (str "There is no mark type " (:type json) " in this schema") {})))
   ((requiring-resolve 'pm.model.schema/mark) schema (:type json) (:attrs json)))
 (defn eq [a b]
   (and (= (:type a) (:type b)) (compare-deep (:attrs a) (:attrs b))))

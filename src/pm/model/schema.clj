@@ -96,6 +96,15 @@
           (nil? expr) (content/inline-content? (content-match type))
           :else (let [allowed @(:mark-set type)] (every? #(contains? allowed (:type %)) marks)))))
 
+(defn allows-mark-type? [type mark-type]
+  (let [expr (get-in type [:spec :marks])]
+    (cond (= expr "_") true
+          (nil? expr) (content/inline-content? (content-match type))
+          :else (contains? @(:mark-set type) mark-type))))
+
+(defn is-atom? [node]
+  (boolean (or (fragment/is-leaf? node) (get-in node [:type :spec :atom]))))
+
 (defn valid-content? [type children]
   (let [end (content/match-fragment (content-match type) children)]
     (and end (content/valid-end? end) (every? #(allows-marks? type (:marks %)) children))))
