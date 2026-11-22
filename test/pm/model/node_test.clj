@@ -22,7 +22,7 @@
                        (node/check (assoc (s/text b/schema "a") :marks
                                           [(s/mark b/schema "em") (s/mark b/schema "em")]))))
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Expected value of type string"
-                       (node/check (b/img {:src true}))))))
+                       (node/check (b/img {:src true})))))
 
 (deftest attribute-validation
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Expected value of type number"

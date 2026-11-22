@@ -20,9 +20,18 @@
     (doseq [[_ t] types] (content/parse (or (get-in t [:spec :content]) "") types))
     result))
 
+(defn validate-attr [type k spec value]
+  (when-let [validate (:validate spec)]
+    (if (fn? validate) (validate value)
+        (let [actual (cond (nil? value) "null" (number? value) "number"
+                           (string? value) "string" (boolean? value) "boolean" :else "object")]
+          (when-not (some #{actual} (str/split validate #"\|"))
+            (throw (ex-info (str "Expected value of type " validate " for attribute " (name k)
+                                 " on type " (:name type) ", got " actual) {})))))))
+
 (defn compute-attrs [type attrs]
   (into {} (for [[k spec] (get-in type [:spec :attrs])]
-             [k (cond (contains? attrs k) (get attrs k)
+             [k (cond (contains? attrs k) (do (validate-attr type k spec (get attrs k)) (get attrs k))
                       (contains? spec :default) (:default spec)
                       :else (throw (ex-info (str "No value supplied for attribute " (name k)) {})))])))
 

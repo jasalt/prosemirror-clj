@@ -68,17 +68,21 @@ Track exclusions and the last passing gates here when implementation lands.
 
 ## Current checkpoint
 
-The content-expression parser and ordered NFA/DFA implementation pass all 62
-translated upstream match/fill/fill3 assertions. Three builder regression tests
-add 7 assertions for nested UTF-16 tags, nested marks, text joining, and attribute
-overrides. Run all 69 assertions with `clojure -M:test`.
+Phase 1's content and builder gate passes: all 62 upstream match/fill/fill3
+assertions, syntax-error regressions, nested UTF-16 tags, nested marks, text
+joining, attribute overrides, general schema-driven builders, link marks and
+bare leaf-builder shorthand.
 
-This is **not yet a completed phase 1**: the builder has only the basic named
-helpers, not the general schema-driven `builders` API, link marks, or upstream's
-bare leaf-builder shorthand. Schema and node values are a minimal substrate;
-attribute validators, full mark types and JSON are not implemented. Phase 2 has
-not started. Additional syntax-error/schema regression tests are also needed.
-`PORTED.edn` intentionally still lists no completed phases.
+Phase 2 is in progress: initial Node JSON conversion (keyword-keyed data),
+recursive check, attribute validators, numeric deep comparison, and Mark set
+operations are implemented. Non-ResolvedPos mark set tables are translated.
+Run `clojure -M:test`: 16 tests, 136 assertions currently pass.
+
+Still outstanding for phase 2: Fragment API and normalization, node traversal,
+cutting, text extraction, debug strings, the remaining test-node cases, schema
+construction validation and identity regressions. JSON conversion is not yet a
+complete conformance claim. Schema registry cycles also need safe REPL printing.
+Do not use this checkpoint as a production validation authority.
 
 Implementation adaptation: content matches use an immutable DFA graph and a
 state index instead of cyclic JS objects; fragments currently use vectors.

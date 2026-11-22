@@ -12,8 +12,9 @@
 (defn excludes? [type other]
   (let [expr (get-in type [:spec :excludes])]
     (if (nil? expr) (= type other)
-        (boolean (some #(or (= % "_") (= % (:name other))
-                            (some #{%} (:groups other))) (str/split expr #" +"))))))
+        (boolean (some #(and (not (str/blank? %))
+                            (or (= % "_") (= % (:name other))
+                                (some #{%} (:groups other)))) (str/split expr #" +"))))))
 (defn add-to-set [mark marks]
   (loop [remaining marks out [] placed? false]
     (if-let [other (first remaining)]
