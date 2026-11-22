@@ -31,9 +31,7 @@
                     (recur child (- pos offset 1))))))
 (defn- textblock? [node]
   (and (not (get-in node [:type :inline?]))
-       (content/inline-content?
-        (content/parse (or (get-in node [:type :spec :content]) "")
-                       (:nodes @(get-in node [:type :registry]))))))
+       (content/inline-content? (schema/content-match (:type node)))))
 (defn text-between
   ([node from to] (text-between node from to nil nil))
   ([node from to separator] (text-between node from to separator nil))
@@ -105,22 +103,11 @@
         (throw (ex-info (str "Unsupported attribute " (name k) " on type " (:name type)) {}))))
     (doseq [[k spec] specs] (schema/validate-attr type k spec (get attrs k)))))
 
-(defn- allows-marks? [type child]
-  (let [expr (get-in type [:spec :marks])
-        m (content/parse (or (get-in type [:spec :content]) "") (:nodes @(:registry type)))]
-    (or (= expr "_") (and (nil? expr) (content/inline-content? m))
-        (every? (fn [mark]
-                  (some #(and (not (str/blank? %))
-                              (or (= % (get-in mark [:type :name]))
-                                  (some #{%} (get-in mark [:type :groups]))))
-                        (str/split (or expr "") #" +"))) (:marks child)))))
-
 (defn check [node]
   (let [type (:type node)
-        m (content/parse (or (get-in type [:spec :content]) "") (:nodes @(:registry type)))
-        matched (content/match-fragment m (:content node))]
+        matched (content/match-fragment (schema/content-match type) (:content node))]
     (when-not (and matched (content/valid-end? matched)
-                   (every? #(allows-marks? type %) (:content node)))
+                   (every? #(schema/allows-marks? type (:marks %)) (:content node)))
       (throw (ex-info (str "Invalid content for node " (:name type)) {})))
     (check-attrs type (:attrs node))
     (doseq [m (:marks node)] (check-attrs (:type m) (:attrs m)))

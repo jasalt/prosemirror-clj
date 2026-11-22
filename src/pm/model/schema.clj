@@ -10,6 +10,12 @@
   (deref [_] @state))
 (defmethod print-method SchemaRef [_ writer] (.write ^java.io.Writer writer "#<schema>"))
 
+(deftype Lazy [d]
+  clojure.lang.IDeref
+  (deref [_] @d))
+(defmethod print-method Lazy [_ writer] (.write ^java.io.Writer writer "#<lazy>"))
+(defmacro ^:private lazy [& body] `(Lazy. (delay ~@body)))
+
 (defn gather-marks [schema expr]
   (vec (mapcat
         (fn [name]
@@ -25,6 +31,9 @@
         types (into {} (map-indexed
                         (fn [rank [name spec]]
                           [name {:name name :spec spec :rank rank :registry registry
+                                 :match (lazy (content/parse (or (:content spec) "") (:nodes @state)))
+                                 :mark-set (lazy (when-let [expr (:marks spec)]
+                                                   (when-not (= expr "_") (set (gather-marks @state expr)))))
                                  :inline? (boolean (or (= name "text") (:inline spec)))
                                  :groups (str/split (or (:group spec) "") #" +")}]) nodes))
         ;; Keep declaration order even beyond Clojure's array-map threshold.
@@ -43,8 +52,8 @@
     (reset! state result)
     (doseq [[name t] types]
       (when (get mark-types name) (throw (ex-info "Name cannot be both a node and a mark" {})))
-      (content/parse (or (get-in t [:spec :content]) "") types)
-      (when-let [expr (get-in t [:spec :marks])] (gather-marks result expr)))
+      @(:match t)
+      @(:mark-set t))
     (doseq [[_ t] mark-types]
       (when-let [expr (get-in t [:spec :excludes])] (gather-marks result expr)))
     result))
@@ -78,16 +87,17 @@
    (when (= "text" (:name type)) (throw (ex-info "NodeType.create cannot construct text nodes" {})))
    {:type type :attrs (compute-attrs type attrs) :content (fragment/from children) :marks (mark/set-from marks)}))
 
+(defn content-match [type] @(:match type))
+
 (defn allows-marks? [type marks]
-  (let [expr (get-in type [:spec :marks])
-        m (content/parse (or (get-in type [:spec :content]) "") (:nodes @(:registry type)))]
-    (or (= expr "_") (and (nil? expr) (content/inline-content? m))
-        (let [allowed (set (gather-marks @(:registry type) (or expr "")))]
-          (every? #(contains? allowed (:type %)) marks)))))
+  (let [expr (get-in type [:spec :marks])]
+    (cond (empty? marks) true
+          (= expr "_") true
+          (nil? expr) (content/inline-content? (content-match type))
+          :else (let [allowed @(:mark-set type)] (every? #(contains? allowed (:type %)) marks)))))
 
 (defn valid-content? [type children]
-  (let [m (content/parse (or (get-in type [:spec :content]) "") (:nodes @(:registry type)))
-        end (content/match-fragment m children)]
+  (let [end (content/match-fragment (content-match type) children)]
     (and end (content/valid-end? end) (every? #(allows-marks? type (:marks %)) children))))
 
 (defn create-checked
@@ -104,9 +114,6 @@
   ([schema s marks]
    (when-not (and (string? s) (seq s)) (throw (ex-info "Empty or invalid text node" {})))
    {:type (get-in schema [:nodes "text"]) :attrs {} :text s :content [] :marks (mark/set-from marks)}))
-
-(defn content-match [type]
-  (content/parse (or (get-in type [:spec :content]) "") (:nodes @(:registry type))))
 
 (defn compatible-content? [type other]
   (or (= type other)
