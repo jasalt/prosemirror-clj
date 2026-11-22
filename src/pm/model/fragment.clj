@@ -65,5 +65,11 @@
             (nodes-between (:content node) (max 0 (- from start))
                            (min (size (:content node)) (- to start)) f (+ node-start start) node)))
         (recur (inc index) end)))))
+(defn to-json [fragment]
+  (when (seq fragment) (mapv (requiring-resolve 'pm.model.node/to-json) fragment)))
+(defn from-json [schema value]
+  (cond (not value) []
+        (not (vector? value)) (throw (ex-info "Invalid input for Fragment.fromJSON" {}))
+        :else (from-array (mapv #((requiring-resolve 'pm.model.node/from-json) schema %) value))))
 (defn to-string [fragment]
   (str "<" (str/join ", " (map (requiring-resolve 'pm.model.node/to-string) fragment)) ">"))

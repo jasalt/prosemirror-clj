@@ -2,4 +2,5 @@
  :packages {prosemirror-model {:version "1.25.13" :revision "819b986"}
             prosemirror-transform {:version "1.12.7" :revision "fe4882e"}
             prosemirror-test-builder {:version "1.1.1" :revision "a76003e"}}
- :completed-phases [1]}
+ :completed-phases [1 2]
+ :deferred {:test-mark "ResolvedPos.marks (11 cases) -> phase 3"}}

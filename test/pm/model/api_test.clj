@@ -25,7 +25,7 @@
     (is (not (n/can-replace d 0 1 [(s/text b/schema "x")])))
     (is (n/can-replace d 0 1 [(s/text b/schema "ignored") (b/p)] 1 2))
     (is (n/can-replace-with p 0 1 (get-in b/schema [:nodes "image"])))
-    (is (not (n/can-replace-with d 0 1 (get-in b/schema [:nodes "paragraph"]) [(s/mark b/schema "em")]))))
+    (is (not (n/can-replace-with d 0 1 (get-in b/schema [:nodes "paragraph"]) [(s/mark b/schema "em")])))
     (is (n/can-append p (b/p)))
     (is (not (n/can-append p (b/hr))))
     (is (n/can-append d (b/doc (b/hr))))))

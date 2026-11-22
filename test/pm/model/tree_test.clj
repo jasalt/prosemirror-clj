@@ -3,6 +3,7 @@
             [pm.model.node :as n]
             [pm.model.fragment :as f]
             [pm.model.schema :as s]
+            [pm.test-builder :as b]
             [pm.test-builder :refer [doc p ul li blockquote em strong code img br hr]]))
 
 ;; Remaining tree operations from upstream test-node.ts.
@@ -13,7 +14,8 @@
     (doc (p "foo" (img) (br) "bar")) "doc(paragraph(\"foo\", image, hard_break, \"bar\"))"
     (doc (p "foo" (em "bar" (strong "quux")) (code "baz")))
     "doc(paragraph(\"foo\", em(\"bar\"), em(strong(\"quux\")), code(\"baz\")))"
-    (br) "hard_break"))
+    (br) "hard_break"
+    (s/text b/schema "hello") "\"hello\""))
 
 (deftest cuts
   (are [node expected]
@@ -76,6 +78,9 @@
         para (s/create (get-in custom [:nodes "paragraph"]) {} [(s/text custom "Hello ") contact])]
     (is (= "Bob <bob@example.com>" (n/text-content contact)))
     (is (= "Hello Bob <bob@example.com>" (n/text-content para)))
+    (let [d (s/create-checked (get-in custom [:nodes "doc"]) {} [para])]
+      (is (= "Hello Bob <bob@example.com>" (n/text-between d 0 (f/size (:content d)))))
+      (is (= "Hello <anonymous>" (n/text-between d 0 (f/size (:content d)) "" "<anonymous>"))))
     (is (= "Hello <anonymous>" (n/text-between para 0 (f/size (:content para)) "" "<anonymous>")))
     (is (= "custom_text" (n/to-string (s/text custom "hello"))))
     (is (= "<custom_text, custom_hard_break, custom_text>"

@@ -105,7 +105,24 @@
    (when-not (and (string? s) (seq s)) (throw (ex-info "Empty or invalid text node" {})))
    {:type (get-in schema [:nodes "text"]) :attrs {} :text s :content [] :marks (mark/set-from marks)}))
 
-(defn create-and-fill [type]
-  (let [m (content/parse (or (get-in type [:spec :content]) "") (:nodes @(:registry type)))
-        children (content/fill-before m [] true)]
-    (when children (create type nil children))))
+(defn content-match [type]
+  (content/parse (or (get-in type [:spec :content]) "") (:nodes @(:registry type))))
+
+(defn compatible-content? [type other]
+  (or (= type other)
+      (boolean (some (set (map first (content/edges (content-match type))))
+                     (map first (content/edges (content-match other)))))))
+
+(defn create-and-fill
+  ([type] (create-and-fill type nil nil nil))
+  ([type attrs children] (create-and-fill type attrs children nil))
+  ([type attrs children marks]
+   (let [attrs (compute-attrs type attrs)
+         m (content-match type)
+         children (fragment/from children)
+         before (if (seq children) (content/fill-before m children) [])]
+     (when before
+       (let [children (fragment/append before children)
+             matched (content/match-fragment m children)
+             after (when matched (content/fill-before matched [] true))]
+         (when after (create type attrs (fragment/append children after) marks)))))))

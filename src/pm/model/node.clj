@@ -64,6 +64,34 @@
                           (str "(" (str/join ", " (map to-string (:content node))) ")"))))]
       (reduce (fn [s m] (str (get-in m [:type :name]) "(" s ")")) base (reverse (:marks node))))))
 
+(defn content-match-at [node index]
+  (or (content/match-fragment (schema/content-match (:type node)) (:content node) 0 index)
+      (throw (ex-info "Called contentMatchAt on a node with invalid content" {}))))
+
+(defn can-replace
+  ([node from to] (can-replace node from to [] 0 0))
+  ([node from to replacement] (can-replace node from to replacement 0 (count replacement)))
+  ([node from to replacement start end]
+   (let [replacement (fragment/from replacement)
+         one (content/match-fragment (content-match-at node from) replacement start end)
+         two (when one (content/match-fragment one (:content node) to (count (:content node))))]
+     (boolean (and two (content/valid-end? two)
+                   (every? #(schema/allows-marks? (:type node) (:marks %))
+                           (subvec replacement start end)))))))
+
+(defn can-replace-with
+  ([node from to type] (can-replace-with node from to type nil))
+  ([node from to type marks]
+   (if (and marks (not (schema/allows-marks? (:type node) marks))) false
+       (let [start (content/match-type (content-match-at node from) type)
+             end (when start (content/match-fragment start (:content node) to (count (:content node))))]
+         (boolean (and end (content/valid-end? end)))))))
+
+(defn can-append [node other]
+  (if (seq (:content other))
+    (can-replace node (count (:content node)) (count (:content node)) (:content other))
+    (schema/compatible-content? (:type node) (:type other))))
+
 (defn eq [a b]
   (and (= (:type a) (:type b)) (compare-deep (:attrs a) (:attrs b))
        (mark/same-set (:marks a) (:marks b)) (= (:text a) (:text b))

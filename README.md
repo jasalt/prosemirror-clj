@@ -73,21 +73,27 @@ assertions, syntax-error regressions, nested UTF-16 tags, nested marks, text
 joining, attribute overrides, general schema-driven builders, link marks and
 bare leaf-builder shorthand.
 
-Phase 2 is in progress. Implemented: Node JSON data/string conversion,
+Phase 2's gate passes. Inventory against upstream 1.25.13: all 41 `test-node.ts`
+cases are translated, plus the 30 non-ResolvedPos `test-mark.ts` cases (the other
+11 are the ResolvedPos.marks cases deferred to phase 3). Regressions added for
+malformed JSON, numeric equality, schema identity and supplementary Unicode.
+Implemented: Node JSON data/string conversion,
 recursive check, attribute validators, numeric deep comparison, Mark set/JSON
 operations, vector-backed Fragment normalization/cutting/editing, node traversal,
 node-at, text extraction and debug strings (including custom leaf rendering).
 Upstream node tree-operation tables and non-ResolvedPos mark tables are translated;
 additional tests cover Unicode cuts, traversal pruning, schema identity,
 constructor rejection and safe printing of schema cycles.
-Run `clojure -M:test`: 32 tests, 219 assertions currently pass.
+Also implemented and tested: `can-replace`, `can-replace-with`, `can-append`,
+`create-and-fill` with supplied content, and Fragment JSON entry points.
+Run `clojure -M:test`: 35 tests, 240 assertions currently pass.
 
-Before closing phase 2, audit remaining model API coverage (especially content
-replacement predicates, Fragment JSON entry points and schema create-and-fill
-with supplied content), and reconcile the case inventory against upstream.
-ResolvedPos-dependent methods/tests remain phase 3. Differential conformance and
-performance testing have not run. Do not use this checkpoint as a production
-validation authority.
+Known limits: the upstream suite has no direct tests for several of these
+additions (`can-replace*`, supplied-content `create-and-fill`); their tests here
+are my own, derived from the upstream algorithm, not translated cases. Phase 3
+will exercise them through replace tests. ResolvedPos-dependent methods remain
+phase 3. Differential conformance and performance testing have not run. Do not
+use this checkpoint as a production validation authority.
 
 Implementation adaptation: content matches use an immutable DFA graph and a
 state index instead of cyclic JS objects; fragments currently use vectors.
