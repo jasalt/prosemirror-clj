@@ -73,20 +73,27 @@ assertions, syntax-error regressions, nested UTF-16 tags, nested marks, text
 joining, attribute overrides, general schema-driven builders, link marks and
 bare leaf-builder shorthand.
 
-Phase 2 is in progress: initial Node JSON conversion (keyword-keyed data),
-recursive check, attribute validators, numeric deep comparison, and Mark set
-operations are implemented. Non-ResolvedPos mark set tables are translated.
-Run `clojure -M:test`: 16 tests, 136 assertions currently pass.
+Phase 2 is in progress. Implemented: Node JSON data/string conversion,
+recursive check, attribute validators, numeric deep comparison, Mark set/JSON
+operations, vector-backed Fragment normalization/cutting/editing, node traversal,
+node-at, text extraction and debug strings (including custom leaf rendering).
+Upstream node tree-operation tables and non-ResolvedPos mark tables are translated;
+additional tests cover Unicode cuts, traversal pruning, schema identity,
+constructor rejection and safe printing of schema cycles.
+Run `clojure -M:test`: 32 tests, 219 assertions currently pass.
 
-Still outstanding for phase 2: Fragment API and normalization, node traversal,
-cutting, text extraction, debug strings, the remaining test-node cases, schema
-construction validation and identity regressions. JSON conversion is not yet a
-complete conformance claim. Schema registry cycles also need safe REPL printing.
-Do not use this checkpoint as a production validation authority.
+Before closing phase 2, audit remaining model API coverage (especially content
+replacement predicates, Fragment JSON entry points and schema create-and-fill
+with supplied content), and reconcile the case inventory against upstream.
+ResolvedPos-dependent methods/tests remain phase 3. Differential conformance and
+performance testing have not run. Do not use this checkpoint as a production
+validation authority.
 
 Implementation adaptation: content matches use an immutable DFA graph and a
 state index instead of cyclic JS objects; fragments currently use vectors.
-Schema types carry a registry atom initialized during schema construction.
+Schema types carry an identity-bearing, dereferenceable SchemaRef initialized
+during schema construction; its printer hides the registry cycle. Fragment size
+is currently computed rather than cached (benchmark before integration).
 
 ## Development
 

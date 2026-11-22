@@ -11,12 +11,12 @@
             ["heading" {:content "inline*" :group "block" :attrs {:level {:default 1 :validate "number"}}}]
             ["code_block" {:content "text*" :marks "" :group "block"}]
             ["text" {:group "inline"}]
-            ["image" {:inline true :group "inline" :attrs {:src {:validate "string"} :alt {:default nil} :title {:default nil}}}]
+            ["image" {:inline true :group "inline" :attrs {:src {:validate "string"} :alt {:default nil :validate "string|null"} :title {:default nil :validate "string|null"}}}]
             ["hard_break" {:inline true :group "inline"}]
-            ["ordered_list" {:content "list_item+" :group "block" :attrs {:order {:default 1}}}]
+            ["ordered_list" {:content "list_item+" :group "block" :attrs {:order {:default 1 :validate "number"}}}]
             ["bullet_list" {:content "list_item+" :group "block"}]
             ["list_item" {:content "paragraph block*"}]]
-    :marks [["link" {:attrs {:href {:validate "string"} :title {:default nil}}}]
+    :marks [["link" {:attrs {:href {:validate "string"} :title {:default nil :validate "string|null"}}}]
             ["em" {}] ["strong" {}] ["code" {}]]}))
 
 (defn- node-size [n]

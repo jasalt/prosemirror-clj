@@ -3,6 +3,12 @@
             [pm.model.comparedeep :refer [compare-deep]]))
 
 (def none [])
+(defn to-json [mark]
+  (cond-> {:type (get-in mark [:type :name])}
+    (seq (:attrs mark)) (assoc :attrs (:attrs mark))))
+(defn from-json [schema json]
+  (when-not (map? json) (throw (ex-info "Invalid input for Mark.fromJSON" {})))
+  ((requiring-resolve 'pm.model.schema/mark) schema (:type json) (:attrs json)))
 (defn eq [a b]
   (and (= (:type a) (:type b)) (compare-deep (:attrs a) (:attrs b))))
 (defn same-set [a b]

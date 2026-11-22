@@ -1,6 +1,7 @@
 (ns pm.model.node
   (:refer-clojure :exclude [descendants])
   (:require [clojure.string :as str]
+            [clojure.data.json :as json]
             [pm.model.schema :as schema]
             [pm.model.fragment :as fragment]
             [pm.model.content :as content]
@@ -57,7 +58,7 @@
       (text-between node 0 (fragment/size (:content node)) "")))
 (defn to-string [node]
   (if-let [f (get-in node [:type :spec :toDebugString])] (f node)
-    (let [base (or (when (:text node) (pr-str (:text node)))
+    (let [base (or (when (:text node) (json/write-str (:text node) :escape-unicode false :escape-slash false))
                    (str (get-in node [:type :name])
                         (when (seq (:content node))
                           (str "(" (str/join ", " (map to-string (:content node))) ")"))))]
@@ -100,16 +101,16 @@
     (doseq [child (:content node)] (check child))
     nil))
 
-(defn- mark-json [mark]
-  (cond-> {:type (get-in mark [:type :name])}
-    (seq (:attrs mark)) (assoc :attrs (:attrs mark))))
-
 (defn to-json [node]
   (cond-> {:type (get-in node [:type :name])}
     (seq (:attrs node)) (assoc :attrs (:attrs node))
     (seq (:content node)) (assoc :content (mapv to-json (:content node)))
-    (seq (:marks node)) (assoc :marks (mapv mark-json (:marks node)))
+    (seq (:marks node)) (assoc :marks (mapv mark/to-json (:marks node)))
     (:text node) (assoc :text (:text node))))
+
+(declare from-json)
+(defn read-json [schema text] (from-json schema (json/read-str text :key-fn keyword)))
+(defn write-json [node] (json/write-str (to-json node)))
 
 (defn from-json [schema json]
   (when-not (map? json) (throw (ex-info "Invalid input for Node.fromJSON" {})))
@@ -117,7 +118,7 @@
     (when-not type (throw (ex-info (str "Unknown node type: " name) {})))
     (doseq [k [:marks :content] :when (some? (get json k))]
       (when-not (vector? (get json k)) (throw (ex-info (str "Invalid " (clojure.core/name k) " data") {}))))
-    (let [marks (mapv #(schema/mark schema (:type %) (:attrs %)) (:marks json))
+    (let [marks (mapv #(mark/from-json schema %) (:marks json))
           node (if (= name "text")
                  (do (when-not (string? (:text json)) (throw (ex-info "Invalid text node in JSON" {})))
                      (schema/text schema (:text json)))
