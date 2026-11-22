@@ -30,11 +30,12 @@
 
 (deftest between
   (are [node expected]
-    (let [seen (atom [])]
-      (n/nodes-between node (get-in (meta node) [:tag "a"]) (get-in (meta node) [:tag "b"])
+    (let [d node seen (atom [])]
+      (n/nodes-between d (get-in (meta d) [:tag "a"]) (get-in (meta d) [:tag "b"])
                        (fn [child pos _ _]
                          (swap! seen conj (or (:text child) (get-in child [:type :name])))
-                         (is (identical? child (n/node-at node pos)))))
+                         (is (identical? child (n/node-at d pos)))
+                         nil))
       (= expected @seen))
     (doc (p "foo<a>bar<b>baz")) ["paragraph" "foobarbaz"]
     (doc (blockquote (ul (li (p "f<a>oo")) (p "b") "<b>") (p "c")))
@@ -79,4 +80,4 @@
     (is (= "custom_text" (n/to-string (s/text custom "hello"))))
     (is (= "<custom_text, custom_hard_break, custom_text>"
            (f/to-string [(s/text custom "hello") (s/create (get-in custom [:nodes "hard_break"]))
-                         (s/text custom "world")]))))))
+                         (s/text custom "world")])))))

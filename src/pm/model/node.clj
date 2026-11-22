@@ -1,9 +1,67 @@
 (ns pm.model.node
+  (:refer-clojure :exclude [descendants])
   (:require [clojure.string :as str]
             [pm.model.schema :as schema]
+            [pm.model.fragment :as fragment]
             [pm.model.content :as content]
             [pm.model.mark :as mark]
             [pm.model.comparedeep :refer [compare-deep]]))
+
+(def node-size fragment/node-size)
+(def is-leaf? fragment/is-leaf?)
+(def same-markup fragment/same-markup)
+(defn copy [node content] (assoc node :content (fragment/from content)))
+(defn cut
+  ([node from] (cut node from (if (:text node) (count (:text node)) (fragment/size (:content node)))))
+  ([node from to]
+   (if-let [text (:text node)]
+     (let [text (subs text from to)]
+       (when (empty? text) (throw (ex-info "Empty text nodes are not allowed" {})))
+       (assoc node :text text))
+     (assoc node :content (fragment/cut (:content node) from to)))))
+(defn nodes-between
+  ([node from to f] (nodes-between node from to f 0))
+  ([node from to f start] (fragment/nodes-between (:content node) from to f start node)))
+(defn descendants [node f] (nodes-between node 0 (fragment/size (:content node)) f))
+(defn node-at [node pos]
+  (let [{:keys [index offset]} (fragment/find-index (:content node) pos)
+        child (get (:content node) index)]
+    (when child (if (or (= offset pos) (:text child)) child
+                    (recur child (- pos offset 1))))))
+(defn- textblock? [node]
+  (and (not (get-in node [:type :inline?]))
+       (content/inline-content?
+        (content/parse (or (get-in node [:type :spec :content]) "")
+                       (:nodes @(get-in node [:type :registry]))))))
+(defn text-between
+  ([node from to] (text-between node from to nil nil))
+  ([node from to separator] (text-between node from to separator nil))
+  ([node from to separator leaf-text]
+   (if-let [text (:text node)] (subs text from (min to (count text)))
+     (let [out (StringBuilder.) first-block? (atom true)]
+       (nodes-between node from to
+         (fn [child pos _ _]
+           (let [leaf (or leaf-text (get-in child [:type :spec :leafText]))
+                 text (cond (:text child) (subs (:text child) (max 0 (- from pos))
+                                               (min (count (:text child)) (- to pos)))
+                            (and (is-leaf? child) leaf) (if (fn? leaf) (leaf child) leaf)
+                            :else "")]
+             (when (and (not (get-in child [:type :inline?])) separator
+                        (or (and (is-leaf? child) (seq text)) (textblock? child)))
+               (if @first-block? (reset! first-block? false) (.append out ^String separator)))
+             (.append out ^String text))))
+       (str out)))))
+(defn text-content [node]
+  (or (:text node)
+      (when (is-leaf? node) (when-let [f (get-in node [:type :spec :leafText])] (f node)))
+      (text-between node 0 (fragment/size (:content node)) "")))
+(defn to-string [node]
+  (if-let [f (get-in node [:type :spec :toDebugString])] (f node)
+    (let [base (or (when (:text node) (pr-str (:text node)))
+                   (str (get-in node [:type :name])
+                        (when (seq (:content node))
+                          (str "(" (str/join ", " (map to-string (:content node))) ")"))))]
+      (reduce (fn [s m] (str (get-in m [:type :name]) "(" s ")")) base (reverse (:marks node))))))
 
 (defn eq [a b]
   (and (= (:type a) (:type b)) (compare-deep (:attrs a) (:attrs b))

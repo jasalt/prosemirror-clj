@@ -1,6 +1,7 @@
 (ns pm.model.schema
   (:require [clojure.string :as str]
-            [pm.model.content :as content]))
+            [pm.model.content :as content]
+            [pm.model.fragment :as fragment]))
 
 (defn schema [{:keys [nodes marks] :as spec}]
   (let [registry (atom nil)
@@ -45,7 +46,7 @@
 (defn create
   ([type] (create type nil []))
   ([type attrs children]
-   {:type type :attrs (compute-attrs type attrs) :content (vec children) :marks []}))
+   {:type type :attrs (compute-attrs type attrs) :content (fragment/from children) :marks []}))
 
 (defn text [schema s]
   (when (empty? s) (throw (ex-info "Empty text nodes are not allowed" {})))
