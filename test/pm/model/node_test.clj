@@ -33,6 +33,10 @@
   (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unsupported attribute"
                        (node/check (assoc-in (b/p) [:attrs :unknown] true)))))
 
+(deftest json-wire-roundtrip
+  (let [d (b/doc (b/p "😀\n\"\\" (b/a {:href "https://example.com"} "link")))]
+    (is (node/eq d (node/read-json b/schema (node/write-json d))))))
+
 (deftest malformed-json
   (are [json] (thrown? clojure.lang.ExceptionInfo (node/from-json b/schema json))
     nil {} {:type "evil"} {:type "text" :text ""} {:type "text" :text 12}
