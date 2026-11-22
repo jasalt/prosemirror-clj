@@ -53,6 +53,11 @@
     "hard_break{2,}" "hard_break" false
 ))
 
+(deftest invalid-expressions
+  (are [expr] (thrown? clojure.lang.ExceptionInfo (content/parse expr (:nodes b/schema)))
+    "unknown*" "paragraph text" "(paragraph" "paragraph)" "paragraph{a}"
+    "paragraph{2" "text+" "image+" "()"))
+
 (defn get-match [expr] (content/parse expr (:nodes b/schema)))
 
 (deftest fill-before-tables

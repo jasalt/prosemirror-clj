@@ -11,7 +11,11 @@
                                  :groups (str/split (or (:group spec) "") #" +")}]) nodes))
         ;; Keep declaration order even beyond Clojure's array-map threshold.
         types (into (sorted-map-by #(compare (:rank (get types %1)) (:rank (get types %2)))) types)
-        result {:nodes types :marks marks :spec spec}]
+        mark-types (into {} (map-indexed
+                            (fn [rank [name spec]]
+                              [name {:name name :spec spec :rank rank :registry registry
+                                     :groups (str/split (or (:group spec) "") #" +")}]) marks))
+        result {:nodes types :marks mark-types :spec spec}]
     (reset! registry result)
     (doseq [[_ t] types] (content/parse (or (get-in t [:spec :content]) "") types))
     result))
@@ -21,6 +25,13 @@
              [k (cond (contains? attrs k) (get attrs k)
                       (contains? spec :default) (:default spec)
                       :else (throw (ex-info (str "No value supplied for attribute " (name k)) {})))])))
+
+(defn mark
+  ([schema name] (mark schema name nil))
+  ([schema name attrs]
+   (let [type (get-in schema [:marks name])]
+     (when-not type (throw (ex-info (str "Unknown mark type: " name) {})))
+     {:type type :attrs (compute-attrs type attrs)})))
 
 (defn create
   ([type] (create type nil []))
