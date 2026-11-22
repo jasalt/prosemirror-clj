@@ -1,0 +1,37 @@
+(ns pm.model.schema
+  (:require [clojure.string :as str]
+            [pm.model.content :as content]))
+
+(defn schema [{:keys [nodes marks] :as spec}]
+  (let [registry (atom nil)
+        types (into {} (map-indexed
+                        (fn [rank [name spec]]
+                          [name {:name name :spec spec :rank rank :registry registry
+                                 :inline? (boolean (or (= name "text") (:inline spec)))
+                                 :groups (str/split (or (:group spec) "") #" +")}]) nodes))
+        ;; Keep declaration order even beyond Clojure's array-map threshold.
+        types (into (sorted-map-by #(compare (:rank (get types %1)) (:rank (get types %2)))) types)
+        result {:nodes types :marks marks :spec spec}]
+    (reset! registry result)
+    (doseq [[_ t] types] (content/parse (or (get-in t [:spec :content]) "") types))
+    result))
+
+(defn compute-attrs [type attrs]
+  (into {} (for [[k spec] (get-in type [:spec :attrs])]
+             [k (cond (contains? attrs k) (get attrs k)
+                      (contains? spec :default) (:default spec)
+                      :else (throw (ex-info (str "No value supplied for attribute " (name k)) {})))])))
+
+(defn create
+  ([type] (create type nil []))
+  ([type attrs children]
+   {:type type :attrs (compute-attrs type attrs) :content (vec children) :marks []}))
+
+(defn text [schema s]
+  (when (empty? s) (throw (ex-info "Empty text nodes are not allowed" {})))
+  (assoc (create (get-in schema [:nodes "text"])) :text s))
+
+(defn create-and-fill [type]
+  (let [m (content/parse (or (get-in type [:spec :content]) "") (:nodes @(:registry type)))
+        children (content/fill-before m [] true)]
+    (when children (create type nil children))))

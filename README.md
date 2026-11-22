@@ -66,9 +66,28 @@ Track exclusions and the last passing gates here when implementation lands.
   map with values pointing back to documents would leak.
 - Test-builder tags are test metadata, never serialized document attributes.
 
+## Current checkpoint
+
+The content-expression parser and ordered NFA/DFA implementation pass all 62
+translated upstream match/fill/fill3 assertions. Three builder regression tests
+add 7 assertions for nested UTF-16 tags, nested marks, text joining, and attribute
+overrides. Run all 69 assertions with `clojure -M:test`.
+
+This is **not yet a completed phase 1**: the builder has only the basic named
+helpers, not the general schema-driven `builders` API, link marks, or upstream's
+bare leaf-builder shorthand. Schema and node values are a minimal substrate;
+attribute validators, full mark types and JSON are not implemented. Phase 2 has
+not started. Additional syntax-error/schema regression tests are also needed.
+`PORTED.edn` intentionally still lists no completed phases.
+
+Implementation adaptation: content matches use an immutable DFA graph and a
+state index instead of cyclic JS objects; fragments currently use vectors.
+Schema types carry a registry atom initialized during schema construction.
+
 ## Development
 
 Use a JDK and Clojure CLI (`devenv shell` in the sibling hyper-prosemirror repo
-currently supplies both). Tests and nREPL aliases will land with phase 1.
+currently supplies both). Run `clojure -M:test` or `clojure -M:repl` (localhost
+nREPL port 7892).
 The implementation follows ProseMirror's MIT-licensed sources; retain upstream
 copyright notices with translated code/tests.
