@@ -11,7 +11,7 @@
 
 ;; ---- test-slice.ts ----
 (defn- slice-is? [d expect open-start open-end]
-  (let [s (r/slice d (or (tag d "a") 0) (tag d "b"))]
+  (let [s (r/slice d (or (tag d "a") 0) (or (tag d "b") (f/size (:content d))))]
     (and (f/eq (:content s) (:content expect))
          (= open-start (:open-start s))
          (= open-end (:open-end s)))))

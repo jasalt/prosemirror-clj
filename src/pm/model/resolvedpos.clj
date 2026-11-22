@@ -4,7 +4,7 @@
   A resolved position is a map `{:pos :path :parent-offset :depth :text-offset}`.
   `:path` is a vector of `[node index start-offset]` triples, one per depth.
   Unlike upstream there is no resolve cache (see README, Differences)."
-  (:refer-clojure :exclude [max min])
+  (:refer-clojure :exclude [max min resolve])
   (:require [clojure.string :as str]
             [pm.model.fragment :as fragment]
             [pm.model.mark :as mark]
