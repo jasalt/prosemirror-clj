@@ -65,41 +65,92 @@ Track exclusions and the last passing gates here when implementation lands.
 - No DOM functionality. Resolved-position caching is deferred; a JVM weak-key
   map with values pointing back to documents would leak.
 - Test-builder tags are test metadata, never serialized document attributes.
+- Step positions in JSON must be integral numbers (`3` or `3.0`). JS accepts
+  `1.5` and computes nonsense; the port rejects it with the same
+  "Invalid input for ...Step.fromJSON" message. The differential harness checks
+  only that the port rejects such cases.
+- Steps are plain maps keyed by `:step` (the JSON stepType) and dispatched with
+  multimethods in the single namespace `pm.transform`, instead of one namespace
+  per upstream step file. `pm.transform/apply-steps` is an addition: an
+  all-or-nothing batch that never throws and reports the failing index.
+- Mappings and slices are immutable values; `Mapping.appendMap` and friends return
+  a new mapping. `StepMap.touches`/`forEach` are not ported (nothing uses them).
+- `Node.slice`, `Node.replace` and `Node.resolve` live in `pm.model.replace` and
+  `pm.model.resolvedpos` to avoid namespace cycles.
 
 ## Current checkpoint
 
-Phase 1's content and builder gate passes: all 62 upstream match/fill/fill3
-assertions, syntax-error regressions, nested UTF-16 tags, nested marks, text
-joining, attribute overrides, general schema-driven builders, link marks and
-bare leaf-builder shorthand.
+All five phases have run. `clojure -M:test`: 82 tests, 705 assertions pass.
 
-Phase 2's gate passes. Inventory against upstream 1.25.13: all 41 `test-node.ts`
-cases are translated, plus the 30 non-ResolvedPos `test-mark.ts` cases (the other
-11 are the ResolvedPos.marks cases deferred to phase 3). Regressions added for
-malformed JSON, numeric equality, schema identity and supplementary Unicode.
-Implemented: Node JSON data/string conversion,
-recursive check, attribute validators, numeric deep comparison, Mark set/JSON
-operations, vector-backed Fragment normalization/cutting/editing, node traversal,
-node-at, text extraction and debug strings (including custom leaf rendering).
-Upstream node tree-operation tables and non-ResolvedPos mark tables are translated;
-additional tests cover Unicode cuts, traversal pruning, schema identity,
-constructor rejection and safe printing of schema cycles.
-Also implemented and tested: `can-replace`, `can-replace-with`, `can-append`,
-`create-and-fill` with supplied content, and Fragment JSON entry points.
-Run `clojure -M:test`: 35 tests, 240 assertions currently pass.
+- **Phases 1-2** (content expressions, builder, Node/Fragment/Mark/JSON/check):
+  all 62 `test-content.ts` match/fill/fill3 assertions, all 41 `test-node.ts`
+  cases and all 41 `test-mark.ts` cases (30 plus the 11 `ResolvedPos.marks` cases,
+  now in `resolve_test.clj`).
+- **Phase 3** (ResolvedPos, Slice, replace): `test-resolve.ts`, `test-slice.ts`
+  and `test-replace.ts` translated.
+- **Phase 4** (StepMap/Mapping, all nine step types): `test-mapping.ts`,
+  `test-step.ts` merge cases and `test-replace_step.ts` translated, plus my own
+  apply/invert/JSON/malformed-input regressions.
+- **Not ported:** `test-trans.ts`, `test-invert.ts`, `test-structure.ts` and
+  `test-droppoint.ts` all need the Transform builder or structure helpers, which
+  are out of scope. Their step-level behavior is exercised only through the
+  differential harness below.
+- Several tests (`can-replace*`, supplied-content `create-and-fill`, the step
+  JSON/malformed-input tables) are mine, written from the upstream algorithm.
+  They are not translated cases.
 
-Known limits: the upstream suite has no direct tests for several of these
-additions (`can-replace*`, supplied-content `create-and-fill`); their tests here
-are my own, derived from the upstream algorithm, not translated cases. Phase 3
-will exercise them through replace tests. ResolvedPos-dependent methods remain
-phase 3. Differential conformance and performance testing have not run. Do not
-use this checkpoint as a production validation authority.
+### Differential harness (phase 5)
+
+`diff/gen.mjs` runs the real prosemirror-model 1.25.13 / prosemirror-transform
+1.12.7 under Node over a seeded random workload and records, per step: accept or
+reject, failure message, resulting document JSON, step map ranges, `toJSON`,
+inverse, `check()` result, plus position mapping, `step.map` and `step.merge`.
+`test/pm/diff_test.clj` replays the same input through the port and compares.
+Run it with `cd diff && npm ci && node gen.mjs SEED COUNT`, then `clojure -M:diff`.
+
+Workload: valid sequences produced with the real `Transform` helpers (insert,
+delete, split, join, lift, wrap, setBlockType, mark steps, node marks, attrs,
+docAttr, replaceRange), plus mutations of those steps (shifted or non-integer
+positions, unknown step types, bad open depths, bad marks, unknown nodes,
+forced `structure`). Result at the last run: seeds 1-4 with 1500 base cases each,
+about 3,400 cases per seed, roughly 4,400 applied steps and 500 soft failures
+per seed, **0 mismatches** on all of them. The first runs found three real bugs in
+the port (reversed `Fragment.cut` ranges threw instead of returning empty, the
+`check()` message lacked upstream's fragment suffix, and slice serialization
+tested `> 0` instead of nonzero), each now pinned by a regression test. The other
+early differences were not port bugs: JSON drops an `undefined` attr value, the
+non-integral-position divergence below, and cases where both sides throw on
+inverse (JS records the throw; the harness now compares that too).
+
+What this does and does not show:
+
+- It is agreement on one schema (basic + list) and a generated workload. It is
+  strong evidence for the step/replace/mark paths, not a proof. Custom schemas,
+  non-default `inclusive`/`excludes`, and `isolating`/`defining` interactions are
+  covered only by the translated unit tests.
+- Mutated cases where JS itself throws a `TypeError` (for example a slice that is
+  deeper than the document) are compared as "both reject", not by message.
+- Non-integral positions are an intentional divergence; see Differences.
+
+### Benchmark (JVM, Temurin 27, no GraalVM needed)
+
+On the spike fixtures the port's result JSON equals the JS result for both the
+10- and 2000-paragraph documents. Cold: 50 steps on the 2000-paragraph document
+took about 190 ms including JIT warm-up. Warm: about 1.7 ms for one step on the
+2000-paragraph document (GraalJS measured 0.30 ms in the spike), and about 2 ms to
+`check()` it. Fragment sizes are recomputed on each call rather than cached; that
+is the obvious optimization if the authority needs it, but it has not been
+profiled. Timings are from a single machine and a single run.
+
+Do not treat this as a release. Remaining gates: the `PORTED.edn` pin test against
+the consuming client's `package.json`, and the authority-level checks (unknown
+attribute rejection for `attr`/`docAttr`, size limits) that live in
+hyper-prosemirror, not in this library.
 
 Implementation adaptation: content matches use an immutable DFA graph and a
-state index instead of cyclic JS objects; fragments currently use vectors.
-Schema types carry an identity-bearing, dereferenceable SchemaRef initialized
-during schema construction; its printer hides the registry cycle. Fragment size
-is currently computed rather than cached (benchmark before integration).
+state index instead of cyclic JS objects; fragments are vectors. Schema types
+carry a dereferenceable `SchemaRef` whose printer hides the registry cycle, and
+cache their content match and allowed mark set lazily.
 
 ## Development
 

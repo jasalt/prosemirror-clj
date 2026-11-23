@@ -1,6 +1,12 @@
-{:status :in-progress
+{:status :differentially-tested
+ :note "Not a release. See README 'Current checkpoint' for what the gates do and do not show."
  :packages {prosemirror-model {:version "1.25.13" :revision "819b986"}
             prosemirror-transform {:version "1.12.7" :revision "fe4882e"}
-            prosemirror-test-builder {:version "1.1.1" :revision "a76003e"}}
- :completed-phases [1 2]
- :deferred {:test-mark "ResolvedPos.marks (11 cases) -> phase 3"}}
+            prosemirror-test-builder {:version "1.1.1" :revision "a76003e"}
+            prosemirror-schema-basic {:version "1.2.5"}
+            prosemirror-schema-list {:version "1.5.1"}}
+ :completed-phases [1 2 3 4 5]
+ :not-ported {:modules ["Transform builder" "structure" "droppoint" "DOM parser/serializer" "resolve cache"]
+              :tests ["test-trans" "test-invert" "test-structure" "test-droppoint"]}
+ :remaining-gates ["pin test against consuming client package.json"
+                   "authority-level unknown-attribute rejection for attr/docAttr"]}
