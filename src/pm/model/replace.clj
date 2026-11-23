@@ -29,12 +29,24 @@
     (cond-> {:content (fragment/to-json (:content s))}
       (pos? (:open-start s)) (assoc :openStart (:open-start s))
       (pos? (:open-end s)) (assoc :openEnd (:open-end s)))))
+(defn- js-falsy? [x]
+  (or (nil? x) (false? x) (= "" x) (and (number? x) (or (zero? x) (and (float? x) (Double/isNaN x))))))
+
+(defn- open-depth
+  "Upstream reads `json.openStart || 0` and requires a number. JSON numbers that
+  are integral (1.0, 1e0) become longs so depth comparisons are exact.
+  Differences from upstream: fractional depths are rejected (JS accepts them
+  and fails later or computes garbage)."
+  [x]
+  (let [x (if (js-falsy? x) 0 x)]
+    (when-not (and (number? x) (not (Double/isInfinite (double x))) (== x (Math/rint (double x))))
+      (range-error "Invalid input for Slice.fromJSON"))
+    (long x)))
+
 (defn slice-from-json [schema json]
   (if-not json
     empty-slice
-    (let [open-start (or (:openStart json) 0) open-end (or (:openEnd json) 0)]
-      (when-not (and (number? open-start) (number? open-end))
-        (range-error "Invalid input for Slice.fromJSON"))
+    (let [open-start (open-depth (:openStart json)) open-end (open-depth (:openEnd json))]
       (make-slice (fragment/from-json schema (:content json)) open-start open-end))))
 
 (defn max-open
