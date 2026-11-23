@@ -3,7 +3,7 @@
 //   node gen.mjs [seed] [count]   (defaults: seed 1, count 400)
 // Everything here is deterministic for a given seed + pinned package versions.
 import {Schema, Slice, Fragment} from "prosemirror-model"
-import {Transform, Step, Mapping, StepMap} from "prosemirror-transform"
+import {Transform, Step, Mapping, StepMap, canJoin, canSplit} from "prosemirror-transform"
 import {schema as basic} from "prosemirror-schema-basic"
 import {addListNodes} from "prosemirror-schema-list"
 import {writeFileSync, readFileSync} from "node:fs"
@@ -58,20 +58,30 @@ function block(depth) {
 const randomDoc = () => schema.nodes.doc.create(null, Array.from({length: 1 + r(4)}, () => block(0)))
 
 // ---- valid steps, produced with the real Transform helpers ----
+// Each operation is named so the stats can show which ones actually produced
+// steps. An op whose applied count stays 0 is dead coverage.
+const opStats = {}
+const opNames = ["addMark", "addMark", "removeMark", "insertText", "insertText", "delete", "replaceWith",
+                 "replaceOpenParagraphs", "split", "join", "lift", "wrap", "setBlockType", "setNodeMarkup",
+                 "nodeMarkOrAttr", "docAttrOrReplaceRange"]
 function randomOp(tr) {
   const size = tr.doc.content.size
   const pos = () => r(size + 1)
   const mark = () => pick([schema.mark("em"), schema.mark("strong"), schema.mark("link", {href: "/" + r(3)}), schema.mark("code")])
   const a = pos(), b = Math.min(size, a + r(12))
-  switch (r(16)) {
+  const k = r(16)
+  op = opNames[k]
+  switch (k) {
     case 0: case 1: tr.addMark(a, b, mark()); break
     case 2: tr.removeMark(a, b, mark()); break
-    case 3: case 4: tr.insertText(text(), pos()); break
+    case 3: case 4: tr.insert(pos(), schema.text(text(), marksFor())); break
     case 5: tr.delete(a, b); break
     case 6: tr.replaceWith(a, b, schema.text(text())); break
     case 7: tr.replace(a, b, new Slice(Fragment.from([schema.nodes.paragraph.create(), schema.nodes.paragraph.create()]), 1, 1)); break
-    case 8: tr.split(a); break
-    case 9: tr.join(a); break
+    // join/split do not validate their input: call them only where upstream's
+    // own canJoin/canSplit allow, as editor commands do.
+    case 8: if (canSplit(tr.doc, a)) tr.split(a); break
+    case 9: if (canJoin(tr.doc, a)) tr.join(a); break
     case 10: { const $a = tr.doc.resolve(a), $b = tr.doc.resolve(b), rg = $a.blockRange($b); if (rg) tr.lift(rg, Math.max(0, rg.depth - 1)); break }
     case 11: { const rg = tr.doc.resolve(a).blockRange(tr.doc.resolve(b)); if (rg) tr.wrap(rg, [{type: pick([schema.nodes.blockquote, schema.nodes.bullet_list])}]); break }
     case 12: tr.setBlockType(a, b, pick([schema.nodes.paragraph, schema.nodes.heading, schema.nodes.code_block]), {level: 1 + r(3)}); break
@@ -91,9 +101,29 @@ function randomOp(tr) {
   }
 }
 
+let op = null
+function attempt(tr) {
+  const before = tr.steps.length
+  let outcome
+  try { randomOp(tr); outcome = tr.steps.length > before ? "applied" : "noop" }
+  catch (e) {
+    // Transform helpers refuse invalid requests with TransformError, RangeError or
+    // a plain Error (e.g. "NodeType.create can't construct text nodes"). A
+    // TypeError/ReferenceError/SyntaxError means this generator called something
+    // that does not exist or passed nonsense; it must not silently shrink the workload.
+    if (e instanceof TypeError || e instanceof ReferenceError || e instanceof SyntaxError) {
+      console.error(`generator bug in op ${op}:`, e)
+      process.exit(2)
+    }
+    outcome = "refused"
+  }
+  const st = opStats[op] ||= {applied: 0, noop: 0, refused: 0}
+  st[outcome]++
+}
+
 function validCase(id) {
   const doc = randomDoc(), tr = new Transform(doc)
-  for (let n = 1 + r(6); n > 0; n--) { try { randomOp(tr) } catch (e) { /* helper refused: skip */ } }
+  for (let n = 1 + r(6); n > 0; n--) attempt(tr)
   return {id, doc: doc.toJSON(), steps: tr.steps.map(s => s.toJSON()), origin: "valid"}
 }
 
@@ -164,7 +194,7 @@ for (let i = 0; i < count; i++) {
 }
 
 const versions = n => JSON.parse(readFileSync(`node_modules/${n}/package.json`, "utf8")).version
-const stats = {total: cases.length, okSteps: 0, failed: 0, threw: 0, withMerges: 0, stepTypes: {}}
+const stats = {total: cases.length, okSteps: 0, failed: 0, threw: 0, withMerges: 0, stepTypes: {}, ops: opStats}
 for (const c of cases) {
   for (const p of c.per) { if (p.status == "ok") stats.okSteps++; else if (p.status == "failed") stats.failed++; else stats.threw++ }
   for (const s of c.steps) stats.stepTypes[s.stepType] = (stats.stepTypes[s.stepType] || 0) + 1
@@ -175,3 +205,5 @@ writeFileSync("cases.json", JSON.stringify({
   stats, cases
 }))
 console.log(JSON.stringify(stats))
+const dead = opNames.filter(n => !opStats[n]?.applied)
+if (dead.length) { console.error("operations that never produced a step:", [...new Set(dead)]); process.exit(3) }
