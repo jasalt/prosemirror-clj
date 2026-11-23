@@ -1,7 +1,8 @@
 (ns pm.transform.step-test
   "Translated from prosemirror-transform test-step.ts and test-replace_step.ts,
   plus JSON, invert and malformed-input regressions (not upstream cases)."
-  (:require [clojure.test :refer [deftest is are]]
+  (:require [clojure.data.json]
+            [clojure.test :refer [deftest is are testing]]
             [pm.model.fragment :as f]
             [pm.model.node :as n]
             [pm.model.replace :as r]
@@ -199,3 +200,81 @@
     (is (= {:stepType "replace" :from 1 :to 2 :slice nil}
            (t/step-to-json (t/replace-step 1 2 s))))
     (is (contains? (t/step-to-json (t/replace-around-step 0 2 1 1 s 0)) :slice))))
+
+;; ---- review fixes: JSON number and truthiness semantics ----
+(defn- parse-json [s] (clojure.data.json/read-str s :key-fn keyword))
+
+(deftest integral-float-slice-depths
+  ;; JSON numbers such as 0.0, 1.0 and 1e0 are integral. They must compare as
+  ;; integer depths; upstream applies these steps.
+  (let [d (doc (h1 "abc"))]
+    (are [text] (n/eq (doc (h1 "xabc"))
+                      (apply-doc (t/step-from-json schema (parse-json text)) d))
+      "{\"stepType\":\"replace\",\"from\":1,\"to\":1,\"slice\":{\"openStart\":0.0,\"content\":[{\"type\":\"text\",\"text\":\"x\"}]}}"
+      "{\"stepType\":\"replace\",\"from\":1,\"to\":1,\"slice\":{\"openStart\":0.0,\"openEnd\":0e0,\"content\":[{\"type\":\"text\",\"text\":\"x\"}]}}"
+      "{\"stepType\":\"replace\",\"from\":1,\"to\":1,\"slice\":{\"openStart\":1.0,\"openEnd\":1e0,\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"x\"}]}]}}"
+      ;; upstream: `json.openStart || 0`, so JS-falsy values mean 0
+      "{\"stepType\":\"replace\",\"from\":1,\"to\":1,\"slice\":{\"openStart\":null,\"openEnd\":false,\"content\":[{\"type\":\"text\",\"text\":\"x\"}]}}"
+      "{\"stepType\":\"replace\",\"from\":1,\"to\":1,\"slice\":{\"openStart\":\"\",\"openEnd\":-0.0,\"content\":[{\"type\":\"text\",\"text\":\"x\"}]}}"))
+  (testing "depths are normalized to integers when re-serialized"
+    (let [step (t/step-from-json schema (parse-json "{\"stepType\":\"replace\",\"from\":1,\"to\":1,\"slice\":{\"openStart\":1.0,\"openEnd\":1e0,\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"x\"}]}]}}"))
+          sj (:slice (t/step-to-json step))]
+      (is (instance? Long (:openStart sj)))
+      (is (instance? Long (:openEnd sj)))))
+  (testing "non-integral and non-numeric depths are rejected (documented difference for fractions)"
+    (are [slice] (thrown-with-msg? clojure.lang.ExceptionInfo #"Invalid input for Slice.fromJSON"
+                                   (t/step-from-json schema {:stepType "replace" :from 1 :to 1 :slice slice}))
+      {:openStart 0.5 :content [{:type "text" :text "x"}]}
+      {:openStart "1" :content [{:type "text" :text "x"}]}
+      {:openEnd true :content [{:type "text" :text "x"}]})))
+
+(def ^:private h2-doc
+  (n/from-json schema {:type "doc" :content [{:type "heading" :attrs {:level 2}
+                                              :content [{:type "text" :text "abc"}]}]}))
+
+(deftest attr-step-absent-value-is-not-null
+  ;; Upstream reads `json.value`, which is `undefined` when absent; NodeType.create
+  ;; then falls back to the attribute default. Explicit null is validated as null.
+  (let [absent (t/step-from-json schema {:stepType "attr" :pos 0 :attr "level"})
+        null (t/step-from-json schema {:stepType "attr" :pos 0 :attr "level" :value nil})]
+    (is (= 1 (get-in (apply-doc absent h2-doc) [:content 0 :attrs :level])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                          #"Expected value of type number for attribute level on type heading, got null"
+                          (t/apply-step null h2-doc)))
+    (is (= {:stepType "attr" :pos 0 :attr "level"} (t/step-to-json absent)))
+    (is (= {:stepType "attr" :pos 0 :attr "level" :value nil} (t/step-to-json null))))
+  (testing "a required attribute without a value has no default to fall back on"
+    (let [d (doc (p (img)))]
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"No value supplied for attribute src"
+                            (t/apply-step (t/step-from-json schema {:stepType "attr" :pos 1 :attr "src"}) d)))))
+  (testing "invert records absent for attributes the node does not have, null for null ones"
+    (is (= {:stepType "attr" :pos 0 :attr "level"}
+           (t/step-to-json (t/invert-step (t/attr-step 0 "level" 3) (doc (p "a"))))))
+    (is (= {:stepType "attr" :pos 1 :attr "alt" :value nil}
+           (t/step-to-json (t/invert-step (t/attr-step 1 "alt" "x") (doc (p (img)))))))))
+
+(deftest doc-attr-step-absent-value-is-not-null
+  (let [sch (s/schema {:nodes [["doc" {:content "text*" :attrs {:meta {:default "d"}}}] ["text" {}]]})
+        d (s/create (get-in sch [:nodes "doc"]) {:meta "set"} [])
+        absent (t/step-from-json sch {:stepType "docAttr" :attr "meta"})
+        null (t/step-from-json sch {:stepType "docAttr" :attr "meta" :value nil})]
+    (is (= "d" (get-in (apply-doc absent d) [:attrs :meta])))
+    (is (contains? (:attrs (apply-doc null d)) :meta))
+    (is (nil? (get-in (apply-doc null d) [:attrs :meta])))
+    (is (= {:stepType "docAttr" :attr "meta"} (t/step-to-json absent)))
+    (is (= {:stepType "docAttr" :attr "meta" :value nil} (t/step-to-json null)))
+    (is (= {:stepType "docAttr" :attr "other"}
+           (t/step-to-json (t/invert-step (t/doc-attr-step "other" 1) d))))))
+
+(deftest structure-flag-uses-js-truthiness
+  ;; Upstream: `!!json.structure`.
+  (are [flag expected]
+       (and (= expected (:structure? (t/step-from-json schema {:stepType "replace" :from 1 :to 2 :structure flag})))
+            (= expected (:structure? (t/step-from-json schema {:stepType "replaceAround" :from 0 :to 5 :gapFrom 1
+                                                               :gapTo 4 :insert 1 :structure flag}))))
+    nil false, false false, 0 false, 0.0 false, -0.0 false, "" false,
+    true true, 1 true, -1 true, "false" true, "0" true, [] true, {} true)
+  (testing "structure 0 does not guard the replace (reproducer)"
+    (is (n/eq (doc (p "bc"))
+              (apply-doc (t/step-from-json schema {:stepType "replace" :from 1 :to 2 :structure 0})
+                         (doc (p "abc")))))))
