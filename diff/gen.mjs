@@ -131,7 +131,7 @@ function validCase(id) {
 function mutate(c, id) {
   const steps = JSON.parse(JSON.stringify(c.steps))
   if (!steps.length) return null
-  const s = pick(steps), kind = r(7)
+  const s = pick(steps), kind = r(9)
   const numeric = ["from", "to", "pos", "gapFrom", "gapTo", "insert"].filter(k => k in s)
   if (kind == 0 && numeric.length) s[pick(numeric)] += pick([-3, -1, 1, 2, 5, 1000])
   else if (kind == 1 && numeric.length) s[pick(numeric)] = pick([-1, 99999, 1.5, "1", null])
@@ -140,6 +140,12 @@ function mutate(c, id) {
   else if (kind == 4 && s.mark) s.mark = pick([{type: "nope"}, {type: "link"}, {type: "link", attrs: {href: 3}}, null])
   else if (kind == 5) s.structure = true
   else if (kind == 6 && s.slice) s.slice.content = [{type: pick(["script", "text", "doc", "paragraph", "image"]), ...(r(2) ? {text: "t"} : {})}]
+  // JS truthiness of the structure flag (0, "", null are falsy; "0", [] are not)
+  else if (kind == 7 && "from" in s) s.structure = pick([0, "", null, false, "0", "false", [], 1])
+  // absent attr value: undefined in JS, which means "use the default"
+  else if (kind == 8 && (s.stepType == "attr" || s.stepType == "docAttr")) delete s.value
+  // (Integral float depths like 1.0 cannot be produced here: JSON.stringify
+  // writes 1. They are covered by unit tests parsing JSON text.)
   else return null
   return {id, doc: c.doc, steps, origin: "mutated"}
 }
