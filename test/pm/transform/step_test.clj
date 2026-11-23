@@ -186,3 +186,16 @@
       (is (= 1 (:index res)))
       (is (re-find #"Invalid content" (:failed res))))
     (is (n/eq d (:doc (t/apply-steps [] d))))))
+
+(deftest nonzero-slice-size-is-serialized
+  ;; Found by the differential harness. Upstream tests `if (this.slice.size)`
+  ;; (any nonzero size), not `> 0`. A slice with empty content and openStart -1
+  ;; (only reachable from malformed JSON) has size 1 and an empty fragment, so
+  ;; :slice is emitted as nil. The reverse case, size -1, is also nonzero.
+  (let [s (r/make-slice [] -1 0)]
+    (is (= 1 (r/slice-size s)))
+    (is (= -1 (r/slice-size (r/make-slice [] 0 1))))
+    (is (contains? (t/step-to-json (t/replace-step 1 2 (r/make-slice [] 0 1))) :slice))
+    (is (= {:stepType "replace" :from 1 :to 2 :slice nil}
+           (t/step-to-json (t/replace-step 1 2 s))))
+    (is (contains? (t/step-to-json (t/replace-around-step 0 2 1 1 s 0)) :slice))))

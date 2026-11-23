@@ -136,7 +136,7 @@
                       (join (:slice other) slice (:open-start (:slice other)) (:open-end slice)) false)))))
 (defmethod step-to-json "replace" [{:keys [from to slice structure?]}]
   (cond-> {:stepType "replace" :from from :to to}
-    (pos? (replace/slice-size slice)) (assoc :slice (replace/slice-to-json slice))
+    (not (zero? (replace/slice-size slice))) (assoc :slice (replace/slice-to-json slice))
     structure? (assoc :structure true)))
 (defmethod step-from-json* "replace" [schema json]
   (let [from (int-value (:from json)) to (int-value (:to json))]
@@ -171,7 +171,7 @@
       (replace-around-step (:pos from*) (:pos to*) gap-from* gap-to* slice insert structure?))))
 (defmethod step-to-json "replaceAround" [{:keys [from to gap-from gap-to insert slice structure?]}]
   (cond-> {:stepType "replaceAround" :from from :to to :gapFrom gap-from :gapTo gap-to :insert insert}
-    (pos? (replace/slice-size slice)) (assoc :slice (replace/slice-to-json slice))
+    (not (zero? (replace/slice-size slice))) (assoc :slice (replace/slice-to-json slice))
     structure? (assoc :structure true)))
 (defmethod step-from-json* "replaceAround" [schema json]
   (let [[from to gap-from gap-to insert] (map #(int-value (get json %)) [:from :to :gapFrom :gapTo :insert])]
