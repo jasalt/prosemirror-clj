@@ -109,13 +109,19 @@
   (let [end (content/match-fragment (content-match type) children)]
     (and end (content/valid-end? end) (every? #(allows-marks? type (:marks %)) children))))
 
+(defn invalid-content-message
+  "Upstream's NodeType.checkContent wording: name plus the first 50 chars of the fragment."
+  [type children]
+  (let [s (fragment/to-string children)]
+    (str "Invalid content for node " (:name type) ": " (subs s 0 (min 50 (count s))))))
+
 (defn create-checked
   ([type] (create-checked type nil []))
   ([type attrs children] (create-checked type attrs children nil))
   ([type attrs children marks]
    (let [node (create type attrs children marks)]
      (when-not (valid-content? type (:content node))
-       (throw (ex-info (str "Invalid content for node " (:name type)) {})))
+       (throw (ex-info (invalid-content-message type (:content node)) {})))
      node)))
 
 (defn text

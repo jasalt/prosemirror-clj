@@ -108,7 +108,7 @@
         matched (content/match-fragment (schema/content-match type) (:content node))]
     (when-not (and matched (content/valid-end? matched)
                    (every? #(schema/allows-marks? type (:marks %)) (:content node)))
-      (throw (ex-info (str "Invalid content for node " (:name type)) {})))
+      (throw (ex-info (schema/invalid-content-message type (:content node)) {})))
     (check-attrs type (:attrs node))
     (doseq [m (:marks node)] (check-attrs (:type m) (:attrs m)))
     (when-not (mark/same-set (:marks node) (reduce #(mark/add-to-set %2 %1) [] (:marks node)))

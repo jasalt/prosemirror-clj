@@ -45,3 +45,15 @@
   ;; Parsing is not recursive content validation; check is the authority gate.
   (is (thrown? clojure.lang.ExceptionInfo
                (node/check (node/from-json b/schema {:type "doc" :content [{:type "text" :text "x"}]})))))
+
+(deftest check-message-includes-content
+  ;; Found by the differential harness: upstream's checkContent appends the
+  ;; first 50 chars of the fragment's debug string.
+  (let [bad (s/create (get-in b/schema [:nodes "blockquote"]) nil [])]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"^Invalid content for node blockquote: <>$"
+                          (node/check bad))))
+  (let [long-bad (s/create (get-in b/schema [:nodes "doc"]) nil
+                           [(s/text b/schema (apply str (repeat 80 "x")))])
+        msg (try (node/check long-bad) (catch Exception e (ex-message e)))]
+    (is (= (str "Invalid content for node doc: <\"" (apply str (repeat 48 "x")))
+           msg))))
