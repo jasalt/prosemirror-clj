@@ -29,6 +29,13 @@
              (== x (Math/floor (double x))))
     (long x)))
 
+(defn- js-truthy?
+  "JavaScript `!!x` for JSON values: false, null, 0, -0, NaN and \"\" are falsy;
+  everything else, including \"false\", [] and {}, is truthy."
+  [x]
+  (not (or (nil? x) (false? x) (= "" x)
+           (and (number? x) (or (zero? x) (and (float? x) (Double/isNaN x)))))))
+
 ;; ---- results ----
 (defn ok [doc] {:doc doc :failed nil})
 (defn failure [message] {:doc nil :failed message})
@@ -147,7 +154,7 @@
 (defmethod step-from-json* "replace" [schema json]
   (let [from (int-value (:from json)) to (int-value (:to json))]
     (when-not (and from to) (fail "Invalid input for ReplaceStep.fromJSON"))
-    (replace-step from to (replace/slice-from-json schema (:slice json)) (boolean (:structure json)))))
+    (replace-step from to (replace/slice-from-json schema (:slice json)) (js-truthy? (:structure json)))))
 
 ;; ---- replaceAround ----
 (defmethod apply-step* "replaceAround" [{:keys [from to gap-from gap-to slice insert structure?]} doc]
@@ -183,7 +190,7 @@
   (let [[from to gap-from gap-to insert] (map #(int-value (get json %)) [:from :to :gapFrom :gapTo :insert])]
     (when-not (and from to gap-from gap-to insert) (fail "Invalid input for ReplaceAroundStep.fromJSON"))
     (replace-around-step from to gap-from gap-to (replace/slice-from-json schema (:slice json))
-                         insert (boolean (:structure json)))))
+                         insert (js-truthy? (:structure json)))))
 
 ;; ---- marks over ranges ----
 (defn- map-fragment [content f parent]
