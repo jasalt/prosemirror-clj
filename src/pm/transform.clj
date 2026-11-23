@@ -53,8 +53,14 @@
 (defn mark-set-step [steps] {:step "markSet" :steps (vec steps)})
 (defn add-node-mark-step [pos mark] {:step "addNodeMark" :pos pos :mark mark})
 (defn remove-node-mark-step [pos mark] {:step "removeNodeMark" :pos pos :mark mark})
-(defn attr-step [pos attr value] {:step "attr" :pos pos :attr attr :value value})
-(defn doc-attr-step [attr value] {:step "docAttr" :attr attr :value value})
+(defn attr-step
+  "With no value, the step carries no :value key: JS `undefined`, which makes
+  the node fall back to the attribute default. A nil value is explicit null."
+  ([pos attr] {:step "attr" :pos pos :attr attr})
+  ([pos attr value] {:step "attr" :pos pos :attr attr :value value}))
+(defn doc-attr-step
+  ([attr] {:step "docAttr" :attr attr})
+  ([attr value] {:step "docAttr" :attr attr :value value}))
 
 (defmulti apply-step* (fn [step _doc] (:step step)))
 (defmulti get-map :step)
@@ -326,27 +332,44 @@
     (remove-node-mark-step pos (mark/from-json schema (:mark json)))))
 
 ;; ---- attributes ----
-(defmethod apply-step* "attr" [{:keys [pos attr value]} doc]
+;; Upstream distinguishes an absent value (`undefined`) from null. Absent means
+;; "use the default" in NodeType.create and is dropped by JSON.stringify. The
+;; port keeps that distinction with the presence of the :value key.
+(defn- set-attr [attrs {:keys [attr] :as step}]
+  (if (contains? step :value)
+    (assoc attrs (keyword attr) (:value step))
+    (dissoc attrs (keyword attr))))
+(defn- with-current-value [step attrs attr]
+  (let [k (keyword attr)]
+    (if (contains? attrs k) (assoc step :value (get attrs k)) (dissoc step :value))))
+(defn- value-json [json step]
+  (cond-> json (contains? step :value) (assoc :value (:value step))))
+(defn- value-from-json [step json]
+  (cond-> step (contains? json :value) (assoc :value (:value json))))
+
+(defmethod apply-step* "attr" [{:keys [pos] :as step} doc]
   (if-let [n (node/node-at doc pos)]
-    (replace-node doc pos (schema/create (:type n) (assoc (:attrs n) (keyword attr) value) nil (:marks n)))
+    (replace-node doc pos (schema/create (:type n) (set-attr (:attrs n) step) nil (:marks n)))
     (failure "No node at attribute step's position")))
 (defmethod invert-step "attr" [{:keys [pos attr]} doc]
   (let [n (node/node-at doc pos)]
     (when-not n (fail "No node at attribute step's position"))
-    (attr-step pos attr (get (:attrs n) (keyword attr)))))
-(defmethod map-step "attr" [{:keys [pos attr value]} mapping]
-  (let [r (tmap/map-result mapping pos 1)] (when-not (tmap/deleted-after? r) (attr-step (:pos r) attr value))))
-(defmethod step-to-json "attr" [{:keys [pos attr value]}] {:stepType "attr" :pos pos :attr attr :value value})
+    (with-current-value (attr-step pos attr) (:attrs n) attr)))
+(defmethod map-step "attr" [{:keys [pos] :as step} mapping]
+  (let [r (tmap/map-result mapping pos 1)] (when-not (tmap/deleted-after? r) (assoc step :pos (:pos r)))))
+(defmethod step-to-json "attr" [{:keys [pos attr] :as step}]
+  (value-json {:stepType "attr" :pos pos :attr attr} step))
 (defmethod step-from-json* "attr" [_ json]
   (let [pos (int-value (:pos json))]
     (when-not (and pos (string? (:attr json))) (fail "Invalid input for AttrStep.fromJSON"))
-    (attr-step pos (:attr json) (:value json))))
+    (value-from-json (attr-step pos (:attr json)) json)))
 
-(defmethod apply-step* "docAttr" [{:keys [attr value]} doc]
-  (ok (schema/create (:type doc) (assoc (:attrs doc) (keyword attr) value) (:content doc) (:marks doc))))
-(defmethod invert-step "docAttr" [{:keys [attr]} doc] (doc-attr-step attr (get (:attrs doc) (keyword attr))))
+(defmethod apply-step* "docAttr" [step doc]
+  (ok (schema/create (:type doc) (set-attr (:attrs doc) step) (:content doc) (:marks doc))))
+(defmethod invert-step "docAttr" [{:keys [attr]} doc] (with-current-value (doc-attr-step attr) (:attrs doc) attr))
 (defmethod map-step "docAttr" [step _] step)
-(defmethod step-to-json "docAttr" [{:keys [attr value]}] {:stepType "docAttr" :attr attr :value value})
+(defmethod step-to-json "docAttr" [{:keys [attr] :as step}]
+  (value-json {:stepType "docAttr" :attr attr} step))
 (defmethod step-from-json* "docAttr" [_ json]
   (when-not (string? (:attr json)) (fail "Invalid input for DocAttrStep.fromJSON"))
-  (doc-attr-step (:attr json) (:value json)))
+  (value-from-json (doc-attr-step (:attr json)) json))
