@@ -68,7 +68,14 @@ Track exclusions and the last passing gates here when implementation lands.
 - Step positions in JSON must be integral numbers (`3` or `3.0`). JS accepts
   `1.5` and computes nonsense; the port rejects it with the same
   "Invalid input for ...Step.fromJSON" message. The differential harness checks
-  only that the port rejects such cases.
+  only that the port rejects such cases. Slice `openStart`/`openEnd` follow
+  upstream's `json.openStart || 0`, so JS-falsy values mean 0. Integral numbers
+  become longs; fractional depths are rejected the same way.
+- JS `undefined` is modelled as an absent map key. An attr/docAttr step without a
+  `:value` key resets the attribute to its default, like upstream, and
+  serializes without `value`. `:value nil` is explicit null. Construct the
+  absent form with the arities `(attr-step pos attr)` and `(doc-attr-step attr)`.
+- Boolean-ish JSON flags (`structure`) use JavaScript truthiness, not Clojure's.
 - Steps are plain maps keyed by `:step` (the JSON stepType) and dispatched with
   multimethods in the single namespace `pm.transform`, instead of one namespace
   per upstream step file. `pm.transform/apply-steps` is an addition: an
@@ -108,19 +115,38 @@ inverse, `check()` result, plus position mapping, `step.map` and `step.merge`.
 `test/pm/diff_test.clj` replays the same input through the port and compares.
 Run it with `cd diff && npm ci && node gen.mjs SEED COUNT`, then `clojure -M:diff`.
 
-Workload: valid sequences produced with the real `Transform` helpers (insert,
-delete, split, join, lift, wrap, setBlockType, mark steps, node marks, attrs,
-docAttr, replaceRange), plus mutations of those steps (shifted or non-integer
-positions, unknown step types, bad open depths, bad marks, unknown nodes,
-forced `structure`). Result at the last run: seeds 1-4 with 1500 base cases each,
-about 3,400 cases per seed, roughly 4,400 applied steps and 500 soft failures
-per seed, **0 mismatches** on all of them. The first runs found three real bugs in
-the port (reversed `Fragment.cut` ranges threw instead of returning empty, the
-`check()` message lacked upstream's fragment suffix, and slice serialization
-tested `> 0` instead of nonzero), each now pinned by a regression test. The other
-early differences were not port bugs: JSON drops an `undefined` attr value, the
-non-integral-position divergence below, and cases where both sides throw on
-inverse (JS records the throw; the harness now compares that too).
+Workload: valid sequences produced with the real `Transform` helpers (text
+insert, delete, replaceWith, open-paragraph replace, split and join guarded by
+`canSplit`/`canJoin`, lift, wrap, setBlockType, setNodeMarkup, mark steps, node
+marks, attrs, docAttr, replaceRange), plus mutations of those steps (shifted or
+non-integer positions, unknown step types, bad open depths, bad marks, unknown
+nodes, forced `structure`, JS-falsy and truthy non-boolean `structure` values,
+attr/docAttr steps with the value removed). The generator only skips refusals
+from the helpers (TransformError, RangeError, plain Error). A TypeError,
+ReferenceError or SyntaxError aborts the run as a generator bug, and any
+operation that never produces a step fails the run. Per-operation
+applied/noop/refused counts are in the printed stats.
+
+Result at the last run: seeds 1-4 with 1500 base cases each, about 3,400-3,460
+cases and 5,800-5,900 applied steps per seed, **0 mismatches**. To check the
+harness itself, I ran it on seed 1 against `transform.clj` from before the
+absent-value and structure fixes. It reported 328 mismatches.
+
+Real port bugs found so far, each pinned by a regression test:
+- by the harness: reversed `Fragment.cut` ranges threw instead of returning
+  empty; the `check()` message lacked upstream's fragment suffix; slice
+  serialization tested `> 0` instead of nonzero;
+- by review, then added to the harness: integral float slice depths (`1.0`)
+  failed the depth comparison; an absent attr/docAttr `value` was treated as
+  explicit null, when upstream uses the attribute default; `structure: 0` or
+  `""` was treated as true.
+
+Earlier versions of the harness had two gaps that hid these bugs. The generator
+called a nonexistent `Transform.insertText` inside a blanket catch, so two of
+its sixteen operations never produced steps. The comparison also dropped every
+`:value nil` key, so explicit null and absent compared equal. Both are fixed.
+Integral float depths cannot come from the generator, since `JSON.stringify`
+writes `1`, so they are covered by unit tests that parse JSON text.
 
 What this does and does not show:
 
