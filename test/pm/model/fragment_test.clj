@@ -23,6 +23,14 @@
     (is (= b (f/cut-by-index (f/add-to-end a (first b)) 1 2)))
     (is (= (into b a) (f/add-to-start a (first b))))))
 
+(deftest inverted-cut-range-is-empty
+  ;; Found by the differential harness (case m114.1): upstream's Fragment.cut
+  ;; only walks when to > from, so a reversed range yields an empty fragment.
+  (let [content (:content (b/p "hello" (b/img) "world"))]
+    (are [from to] (= [] (f/cut content from to))
+      3 2, 8 7, 0 0, 5 5, 4 1)
+    (is (= [] (:content (n/cut (b/p "hello") 3 2))))))
+
 (deftest traversal-pruning
   (let [d (b/doc (b/blockquote (b/p "hidden")) (b/p "visible")) seen (atom [])]
     (n/descendants d (fn [node _ parent index]

@@ -34,7 +34,7 @@
 (defn cut
   ([fragment from] (cut fragment from (size fragment)))
   ([fragment from to]
-   (loop [nodes fragment pos 0 out []]
+   (loop [nodes (when (> to from) (seq fragment)) pos 0 out []]
      (if (or (>= pos to) (empty? nodes)) out
        (let [node (first nodes) end (+ pos (node-size node))]
          (recur (next nodes) end
