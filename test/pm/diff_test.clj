@@ -22,12 +22,11 @@
   (json/read-str (slurp cases-file) :key-fn keyword))
 
 (defn- norm
-  "JSON equality as JS sees it: integral doubles equal integers."
+  "JSON equality as JS sees it: integral doubles equal integers. Explicit null
+  is kept: {:value nil} and {} are different JSON and must not compare equal
+  (the port models JS `undefined` as an absent key, like JSON.stringify)."
   [x]
-  (cond (map? x) (into {} (keep (fn [[k v]]
-                                  ;; JS JSON.stringify drops `undefined` (e.g. an attr step's :value for a
-                                  ;; missing attribute); the port holds nil. Same after re-parsing.
-                                  (when-not (and (= k :value) (nil? v)) [k (norm v)]))) x)
+  (cond (map? x) (into {} (map (fn [[k v]] [k (norm v)])) x)
         (sequential? x) (mapv norm x)
         (and (number? x) (== x (Math/rint (double x)))) (long x)
         :else x))
